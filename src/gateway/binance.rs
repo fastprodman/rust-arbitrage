@@ -47,8 +47,14 @@ pub struct BinanceGateway {
 }
 
 impl BinanceGateway {
+    pub fn new(
+        binance_path: String,
+    ) -> Self{
+        Self{binance_path}
+    }
+
     pub async fn run(self) -> Result<(mpsc::Receiver<Quote>, JoinHandle<Result<()>>)> {
-        let (mut ws, _) = connect_async(self.binance_path).await?;
+        let (mut ws, _) = connect_async(&self.binance_path).await?;
 
         let (sender, reciever) = mpsc::channel::<Quote>(1024);
 
