@@ -29,14 +29,14 @@ struct BinanceBookTicker {
 }
 
 impl BinanceBookTicker {
-    pub fn into_quote(self, recieved_at: Instant, timestamp: SystemTime) -> Quote {
+    pub fn into_quote(self, received_at: Instant, timestamp: SystemTime) -> Quote {
         Quote {
             symbol: self.symbol,
             bid_price: self.bid_price,
             bid_quantity: self.bid_quantity,
             ask_price: self.ask_price,
             ask_quantity: self.ask_quantity,
-            recieved_at,
+            received_at,
             timestamp,
         }
     }

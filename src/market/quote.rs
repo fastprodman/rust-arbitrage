@@ -9,6 +9,6 @@ pub struct Quote {
     pub ask_price: Decimal,
     pub ask_quantity: Decimal,
 
-    pub recieved_at: Instant,
+    pub received_at: Instant,
     pub timestamp: SystemTime,
 }
