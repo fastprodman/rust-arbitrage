@@ -1,7 +1,7 @@
 use rust_decimal::Decimal;
 use std::time::{Instant, SystemTime};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Quote {
     pub symbol: String,
     pub bid_price: Decimal,

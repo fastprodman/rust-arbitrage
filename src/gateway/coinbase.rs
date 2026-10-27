@@ -1,12 +1,19 @@
-use crate::{gateway::coinbase, market::quote::{self, Quote}};
+use crate::market::{
+    processor::MarketProcessor,
+    quote::Quote
+};
 
 use anyhow::{Result, bail};
-use futures_util::{SinkExt, StreamExt, join};
+use futures_util::{SinkExt, StreamExt};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::time::{Instant, SystemTime};
+use std::sync::Arc;
 use tokio::{sync::mpsc, task::JoinHandle};
-use tokio_tungstenite::{connect_async, tungstenite::{self, Message}};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{self, Message},
+};
 
 #[derive(Deserialize)]
 struct CoinbaseMessage {
@@ -25,7 +32,7 @@ struct CoinbaseMessage {
 #[derive(Deserialize)]
 struct CoinbaseEvent {
     #[serde(default)]
-    tickers: Vec<CoinbaseTicker>
+    tickers: Vec<CoinbaseTicker>,
 }
 
 #[derive(Deserialize)]
@@ -40,11 +47,7 @@ struct CoinbaseTicker {
 }
 
 impl CoinbaseTicker {
-    fn into_quote(
-        self,
-        received_at: Instant,
-        timestamp: SystemTime,
-    ) -> Quote {
+    fn into_quote(self, received_at: Instant, timestamp: SystemTime) -> Quote {
         Quote {
             symbol: self.product_id,
             bid_price: self.best_bid,
@@ -57,23 +60,25 @@ impl CoinbaseTicker {
     }
 }
 
-pub struct CoinbaseGateway {
+pub struct CoinbaseGateway<T: MarketProcessor> {
+    quote_processor: T,
     coinbase_path: String,
     product_id: String,
 }
 
-impl CoinbaseGateway {
+impl<T: MarketProcessor> CoinbaseGateway<T> {
     pub fn new(
-        coinbase_path: String,
-        product_id: String,
+        quote_processor: T,
+        coinbase_path: String, product_id: String,
     ) -> Self {
-        Self{
+        Self {
+            quote_processor,
             coinbase_path,
             product_id,
         }
     }
 
-    pub async fn run(self) -> Result<(mpsc::Receiver<Quote>, JoinHandle<Result<()>>)>{
+    pub async fn run(mut self) -> Result<JoinHandle<Result<()>>> {
         let (mut ws, _) = connect_async(&self.coinbase_path).await?;
 
         let subscription = serde_json::json!({
@@ -82,7 +87,8 @@ impl CoinbaseGateway {
             "channel": "ticker"
         });
 
-        ws.send(Message::Text(subscription.to_string().into())).await?;
+        ws.send(Message::Text(subscription.to_string().into()))
+            .await?;
 
         // Subscribe to heartbeats
         let heartbeat_subscription = serde_json::json!({
@@ -90,7 +96,8 @@ impl CoinbaseGateway {
             "channel": "heartbeats"
         });
 
-        let (sender, receiver) = mpsc::channel::<Quote>(1024);
+        ws.send(Message::Text(heartbeat_subscription.to_string().into()))
+            .await?;
 
         let task = tokio::spawn(async move {
             while let Some(result) = ws.next().await {
@@ -101,7 +108,7 @@ impl CoinbaseGateway {
                         let received_at = Instant::now();
                         let timestamp = SystemTime::now();
 
-                        let parsed: CoinbaseMessage = match serde_json::from_str(payload.as_str()){
+                        let parsed: CoinbaseMessage = match serde_json::from_str(payload.as_str()) {
                             Ok(coinbase_message) => coinbase_message,
                             Err(err) => {
                                 eprintln!("Coinbase error: {err}");
@@ -109,39 +116,31 @@ impl CoinbaseGateway {
                             }
                         };
 
-                        if parsed.message_type == Some("error".to_string()){
-                            bail!(
-                                "Coinbase error: {:?}",
-                                parsed.message
-                            );
+                        if parsed.message_type == Some("error".to_string()) {
+                            bail!("Coinbase error: {:?}", parsed.message);
                         }
 
                         if parsed.channel != "ticker".to_string() {
                             continue;
                         }
 
-                        for event in parsed.events{
-                            for ticker in event.tickers{
+                        for event in parsed.events {
+                            for ticker in event.tickers {
                                 let quote = ticker.into_quote(received_at, timestamp);
-                                sender.send(quote).await?;
+                                self.quote_processor.process_quote(quote);
                             }
                         }
-                    },
+                    }
                     Message::Close(frame) => {
                         bail!("Coinbase closed connection: {frame:?}")
-                    },
-                    _ => {},
+                    }
+                    _ => {}
                 }
             }
 
             bail!("coinbase stream ended")
         });
 
-        Ok((receiver, task))
+        Ok(task)
     }
 }
-
-struct CoinbaseProcessor{
-
-}
-
