@@ -1,4 +1,6 @@
-use crate::market::quote::Quote;
+use std::sync::Arc;
+
+use crate::market::{quote::Quote, state::MarketState};
 use anyhow::Result;
 use tokio::sync::watch;
 
@@ -7,12 +9,12 @@ pub trait MarketProcessor: Send + Sync + 'static {
 }
 
 pub struct QuoteProcessor {
-    update_chan: watch::Sender<Option<Quote>>
+    update_chan: watch::Sender<Option<Arc<MarketState>>>
 }
 
 impl QuoteProcessor {
-    pub fn new() -> (Self, watch::Receiver<Option<Quote>>) {
-        let (send, rec) = watch::channel::<Option<Quote>>(None);
+    pub fn new() -> (Self, watch::Receiver<Option<Arc<MarketState>>>) {
+        let (send, rec) = watch::channel::<Option<Arc<MarketState>>>(None);
         (
             Self {update_chan: send},
             rec,
@@ -25,7 +27,7 @@ impl MarketProcessor for QuoteProcessor{
         &self,
         quote: Quote,
     ) -> Result<()> {
-        self.update_chan.send_replace(Some(quote));
+        self.update_chan.send_replace(Some(Arc::new(quote.into())));
 
         Ok(())
     }
