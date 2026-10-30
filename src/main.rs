@@ -1,5 +1,6 @@
 mod gateway;
 mod market;
+mod strategy;
 
 use tokio::time::{interval, Duration};
 

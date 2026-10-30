@@ -1,6 +1,5 @@
 use crate::market::quote::Quote;
-use std::sync::RwLock;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use tokio::sync::watch;
 
 pub trait MarketProcessor: Send + Sync + 'static {
