@@ -127,7 +127,10 @@ impl<T: MarketProcessor> CoinbaseGateway<T> {
                         for event in parsed.events {
                             for ticker in event.tickers {
                                 let quote = ticker.into_quote(received_at, timestamp);
-                                self.quote_processor.process_quote(quote);
+
+                                if let Err(err) = self.quote_processor.process_quote(quote){
+                                    eprintln!("Failed to process quote: {err}")
+                                }
                             }
                         }
                     }

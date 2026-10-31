@@ -60,7 +60,7 @@ impl <T: MarketProcessor> BinanceGateway<T> {
         }
     }
 
-    pub async fn run(mut self) -> Result<JoinHandle<Result<()>>> {
+    pub async fn run(self) -> Result<JoinHandle<Result<()>>> {
         let (mut ws, _) = connect_async(&self.binance_path).await?;
 
         let task: JoinHandle<Result<()>> = tokio::spawn(async move {
@@ -75,7 +75,9 @@ impl <T: MarketProcessor> BinanceGateway<T> {
                         Ok(binance_quote) => {
                             let quote = binance_quote.into_quote(recieved_at, timestamp);
 
-                            self.quote_processor.process_quote(quote);
+                            if let Err(err) = self.quote_processor.process_quote(quote){
+                                eprintln!("Failed to process quote: {err}")
+                            }
                         }
                         Err(err) => {
                             eprintln!("Failed to deserialize Binance quote: {err}");
@@ -83,7 +85,7 @@ impl <T: MarketProcessor> BinanceGateway<T> {
                     }
                 }
             }
-            Ok(())
+            anyhow::bail!("Binance WebSocket ended unexpectedly")
         });
 
         Ok(task)

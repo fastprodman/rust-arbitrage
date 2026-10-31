@@ -2,8 +2,6 @@ mod gateway;
 mod market;
 mod strategy;
 
-use tokio::time::{interval, Duration};
-
 use crate::gateway::binance::BinanceGateway;
 use crate::gateway::coinbase::CoinbaseGateway;
 use crate::market::exchange::Exchange;
@@ -20,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
     let binance_gateway =
         BinanceGateway::new(
             binance_quote_processor,
-            "wss://stream.binance.com:9443/ws/btcusdt@bookTicker".to_string(),
+            "wss://stream.binance.com:9443/ws/btcusd@bookTicker".to_string(),
         );
 
     let (coinbase_quote_processor, coinbase_res) =  QuoteProcessor::new();
