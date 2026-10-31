@@ -5,7 +5,6 @@ use crate::{
     }, 
     strategy::{
         calculator::StrategyService, 
-        opportunity::Opportunity,
     },
 };
 
@@ -13,11 +12,11 @@ use tokio::sync::watch::Receiver;
 use tokio::select;
 use anyhow::{Context, Result};
 
-use std::{result, sync::Arc};
+use std::{sync::Arc};
 
 pub struct MarketDataSource {
-    excahge: Exchange,
-    data_receiver: Receiver<Option<Arc<MarketState>>>,
+    pub excahge: Exchange,
+    pub data_receiver: Receiver<Option<Arc<MarketState>>>,
 } 
 
 impl MarketDataSource {
@@ -48,31 +47,39 @@ impl<S: StrategyService> StrategyRunner<S> {
     async fn wait_for_market_update(&mut self) -> Result<()> {
         select! {
             result = self.close_exchange.data_receiver.changed() => {
-                result.context("Close exchage closed")
+                result.context("Close exchange closed")
             }
             result = self.remote_exchange.data_receiver.changed() => {
-                result.context("Remote exchage closed")
+                result.context("Remote exchange closed")
             }
         }
     }
 
+    fn evaluate(&self) {
+        let Some(close_data) = self.close_exchange.collect_market_state() else {
+            return;
+        };
+
+        let Some(remote_data) = self.remote_exchange.collect_market_state() else {
+            return;
+        };
+
+        let Some(_opportunity) = self.strategy_service.calculate(
+            close_data, remote_data,
+        ) else {
+            return;
+        };
+
+        println!("Opportunity detected!");
+    }
+
     pub async fn run(&mut self)-> Result<()> {
+        self.evaluate();
+
         loop {
             self.wait_for_market_update().await?;
 
-            let Some(close_data) = self.close_exchange.collect_market_state() else {
-                continue;
-            };
-
-            let Some(remote_data) = self.remote_exchange.collect_market_state() else {
-                continue;
-            };
-
-            let Some(Opportunity) = self.strategy_service.calculate(close_data, remote_data) else {
-                continue;
-            };
-
-            todo!()
+            self.evaluate();
         }
     }
 }

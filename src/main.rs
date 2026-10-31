@@ -6,7 +6,10 @@ use tokio::time::{interval, Duration};
 
 use crate::gateway::binance::BinanceGateway;
 use crate::gateway::coinbase::CoinbaseGateway;
+use crate::market::exchange::Exchange;
 use crate::market::processor::QuoteProcessor;
+use crate::strategy::calculator::ArbitrageService;
+use crate::strategy::runner::{MarketDataSource, StrategyRunner};
 
 
 
@@ -30,29 +33,36 @@ async fn main() -> anyhow::Result<()> {
     let binance_task = binance_gateway.run().await?;
     let coinbase_task = coinbase_gateway.run().await?;
 
-    _ = tokio::spawn(async move {
-        let mut ticker = interval(Duration::from_secs(5));
-        loop {
-            ticker.tick().await;
+    let mut runner = StrategyRunner::new(
+        ArbitrageService::new(),
+        MarketDataSource{
+            excahge: Exchange::Coinbase,
+            data_receiver: coinbase_res,
+        },
+        MarketDataSource{
+            excahge: Exchange::Binance,
+            data_receiver: binance_res,
+        },
+    );
 
-            let binance_quote = binance_res.borrow().as_ref().cloned();
-            println!("Binance quote: {binance_quote:?}");
-
-            let coinbase_quote = coinbase_res.borrow().as_ref().cloned();
-            println!("Coinbase quote: {coinbase_quote:?}");
-        }
+    let strategy_task = tokio::spawn(async move {
+        runner.run().await
     });
 
-    tokio::select! {
+    let result = tokio::select! {
         result = binance_task => {
             result??;
-            println!("Biance connector exited")
+            anyhow::bail!("Biance connector exited")
         }
         result = coinbase_task => {
             result??;
-            println!("Coinbase connector exited")
+            anyhow::bail!("Coinbase connector exited")
         }
-    }
+        result = strategy_task => {
+            result??;
+            anyhow::bail!("Strategy task exited")
+        }
+    };
 
-    Ok(())
+    result
 }
