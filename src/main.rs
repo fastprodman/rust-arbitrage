@@ -49,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
         runner.run().await
     });
 
-    let result = tokio::select! {
+    tokio::select! {
         result = binance_task => {
             result??;
             anyhow::bail!("Biance connector exited")
@@ -62,7 +62,5 @@ async fn main() -> anyhow::Result<()> {
             result??;
             anyhow::bail!("Strategy task exited")
         }
-    };
-
-    result
+    }
 }
