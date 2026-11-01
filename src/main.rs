@@ -2,15 +2,14 @@ mod gateway;
 mod market;
 mod strategy;
 
+use rust_decimal::Decimal;
+
 use crate::gateway::binance::BinanceGateway;
 use crate::gateway::coinbase::CoinbaseGateway;
 use crate::market::exchange::Exchange;
 use crate::market::processor::QuoteProcessor;
 use crate::strategy::calculator::ArbitrageService;
 use crate::strategy::runner::{MarketDataSource, StrategyRunner};
-
-
-
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -32,13 +31,17 @@ async fn main() -> anyhow::Result<()> {
     let coinbase_task = coinbase_gateway.run().await?;
 
     let mut runner = StrategyRunner::new(
-        ArbitrageService::new(),
+        ArbitrageService::new(
+            Decimal::from_str_exact("0.001")?,
+            Decimal::from_str_exact("0.001")?,
+            Decimal::from_str_exact("0.01")?,
+        ),
         MarketDataSource{
-            excahge: Exchange::Coinbase,
+            exchange: Exchange::Coinbase,
             data_receiver: coinbase_res,
         },
         MarketDataSource{
-            excahge: Exchange::Binance,
+            exchange: Exchange::Binance,
             data_receiver: binance_res,
         },
     );

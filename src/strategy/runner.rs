@@ -17,7 +17,7 @@ use std::time::Duration;
 use std::{sync::Arc};
 
 pub struct MarketDataSource {
-    pub excahge: Exchange,
+    pub exchange: Exchange,
     pub data_receiver: Receiver<Option<Arc<MarketState>>>,
 } 
 
@@ -77,7 +77,8 @@ impl<S: StrategyService> StrategyRunner<S> {
         }
 
         let Some(_opportunity) = self.strategy_service.calculate(
-            close_data, remote_data,
+            (self.close_exchange.exchange, close_data.as_ref()), 
+            (self.remote_exchange.exchange, remote_data.as_ref()),
         ) else {
             return;
         };
