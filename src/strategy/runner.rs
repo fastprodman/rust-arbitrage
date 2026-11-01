@@ -12,6 +12,8 @@ use tokio::sync::watch::Receiver;
 use tokio::select;
 use anyhow::{Context, Result};
 
+use std::time::Duration;
+
 use std::{sync::Arc};
 
 pub struct MarketDataSource {
@@ -63,6 +65,16 @@ impl<S: StrategyService> StrategyRunner<S> {
         let Some(remote_data) = self.remote_exchange.collect_market_state() else {
             return;
         };
+
+        let max_age = Duration::from_millis(500);
+
+        if !close_data.is_fresh(max_age) || !remote_data.is_fresh(max_age){
+            return;
+        }
+
+        if !close_data.is_valid() || !remote_data.is_valid(){
+            return;
+        }
 
         let Some(_opportunity) = self.strategy_service.calculate(
             close_data, remote_data,

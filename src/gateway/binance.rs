@@ -6,7 +6,7 @@ use serde::Deserialize;
 use crate::market::quote::{Quote};
 use crate::market::processor::{MarketProcessor};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
@@ -75,9 +75,8 @@ impl <T: MarketProcessor> BinanceGateway<T> {
                         Ok(binance_quote) => {
                             let quote = binance_quote.into_quote(recieved_at, timestamp);
 
-                            if let Err(err) = self.quote_processor.process_quote(quote){
-                                eprintln!("Failed to process quote: {err}")
-                            }
+                            self.quote_processor.process_quote(quote)
+                                .context("failed to process binance quote")?;
                         }
                         Err(err) => {
                             eprintln!("Failed to deserialize Binance quote: {err}");

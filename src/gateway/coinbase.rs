@@ -3,7 +3,7 @@ use crate::market::{
     quote::Quote
 };
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use futures_util::{SinkExt, StreamExt};
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -128,9 +128,8 @@ impl<T: MarketProcessor> CoinbaseGateway<T> {
                             for ticker in event.tickers {
                                 let quote = ticker.into_quote(received_at, timestamp);
 
-                                if let Err(err) = self.quote_processor.process_quote(quote){
-                                    eprintln!("Failed to process quote: {err}")
-                                }
+                                self.quote_processor.process_quote(quote)
+                                    .context("failed to process coinbase quote")?;
                             }
                         }
                     }
