@@ -78,13 +78,13 @@ impl<T: MarketProcessor> CoinbaseGateway<T> {
         }
     }
 
-    pub async fn run(mut self) -> Result<JoinHandle<Result<()>>> {
+    pub async fn run(self) -> Result<JoinHandle<Result<()>>> {
         let (mut ws, _) = connect_async(&self.coinbase_path).await?;
 
         let subscription = serde_json::json!({
             "type": "subscribe",
             "product_ids": [self.product_id],
-            "channel": "ticker"
+            "channel": "level2"
         });
 
         ws.send(Message::Text(subscription.to_string().into()))
