@@ -8,7 +8,6 @@ use futures_util::{SinkExt, StreamExt};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::time::{Instant, SystemTime};
-use std::sync::Arc;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_tungstenite::{
     connect_async,
@@ -16,23 +15,24 @@ use tokio_tungstenite::{
 };
 
 #[derive(Deserialize)]
-struct CoinbaseMessage {
-    #[serde(default)]
-    channel: String,
-
-    #[serde(default)]
-    events: Vec<CoinbaseEvent>,
-
-    #[serde(rename = "type")]
-    message_type: Option<String>,
-
-    message: Option<String>,
+#[serde(rename_all="lowercase")]
+enum CoinbaseEventType {
+    Snapshot,
+    Update,
 }
 
 #[derive(Deserialize)]
-struct CoinbaseEvent {
-    #[serde(default)]
-    tickers: Vec<CoinbaseTicker>,
+struct CoinbaseL2Update {
+    side: CoinbaseSide,
+    price_level: Decimal,
+    new_quantity: Decimal,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all="lowercase")]
+enum CoinbaseSide {
+    Bid,
+    Offer,
 }
 
 #[derive(Deserialize)]
@@ -118,10 +118,6 @@ impl<T: MarketProcessor> CoinbaseGateway<T> {
 
                         if parsed.message_type == Some("error".to_string()) {
                             bail!("Coinbase error: {:?}", parsed.message);
-                        }
-
-                        if parsed.channel != "ticker".to_string() {
-                            continue;
                         }
 
                         for event in parsed.events {

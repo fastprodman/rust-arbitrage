@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use rust_decimal::Decimal;
 
 use crate::market::state::PriceLevel;
+use crate::market::book_update::BookUpdate;
 
 pub struct OrderBook {
     bids: BTreeMap<Decimal, Decimal>,
@@ -14,6 +15,23 @@ impl OrderBook {
             bids: BTreeMap::new(), 
             asks: BTreeMap::new(),
         }
+    }
+
+    pub fn apply_update(&mut self, update: BookUpdate){
+        for bid_update in update.bids.iter() {
+            self.update_bid(bid_update.price, bid_update.quantity);
+        }
+
+        for ask_update in update.asks.iter() {
+            self.update_ask(ask_update.price, ask_update.quantity);
+        }
+    }
+
+    pub fn apply_snapshot(&mut self, update: BookUpdate) {
+        self.asks.clear();
+        self.bids.clear();
+
+        self.apply_update(update);
     }
 
     pub fn update_bid(

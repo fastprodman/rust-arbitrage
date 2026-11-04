@@ -9,3 +9,8 @@ pub struct BookUpdate {
     pub bids: Vec<BookLevelUpdate>,
     pub asks: Vec<BookLevelUpdate>,
 }
+
+pub enum BookEvent {
+    Snapshot(BookUpdate),
+    Update(BookUpdate),
+}
