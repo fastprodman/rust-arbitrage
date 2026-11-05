@@ -18,11 +18,11 @@ impl OrderBook {
     }
 
     pub fn apply_update(&mut self, update: BookUpdate){
-        for bid_update in update.bids.iter() {
+        for bid_update in update.bids {
             self.update_bid(bid_update.price, bid_update.quantity);
         }
 
-        for ask_update in update.asks.iter() {
+        for ask_update in update.asks {
             self.update_ask(ask_update.price, ask_update.quantity);
         }
     }

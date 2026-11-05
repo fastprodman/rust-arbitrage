@@ -36,14 +36,18 @@ enum CoinbaseSide {
 }
 
 #[derive(Deserialize)]
-struct CoinbaseTicker {
+struct CoinbaseL2Message {
+    channel: String,
+    sequence_num: u64,
+    events: Vec<CoinbaseEventType>
+}
+
+#[derive(Deserialize)]
+struct CoinbaseL2Event {
+    #[serde(rename = "type")]
+    event_type: CoinbaseEventType,
     product_id: String,
-
-    best_bid: Decimal,
-    best_bid_quantity: Decimal,
-
-    best_ask: Decimal,
-    best_ask_quantity: Decimal,
+    updates: Vec<CoinbaseL2Update>,
 }
 
 impl CoinbaseTicker {
