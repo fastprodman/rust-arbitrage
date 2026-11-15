@@ -3,6 +3,10 @@ use crate::market::{
     quote::Quote
 };
 
+use crate::market::book_update::{
+    self, BookEvent, BookLevelUpdate, BookUpdate,
+};
+
 use anyhow::{Context, Result, bail};
 use futures_util::{SinkExt, StreamExt};
 use rust_decimal::Decimal;
@@ -39,7 +43,7 @@ enum CoinbaseSide {
 struct CoinbaseL2Message {
     channel: String,
     sequence_num: u64,
-    events: Vec<CoinbaseEventType>
+    events: Vec<CoinbaseL2Event>
 }
 
 #[derive(Deserialize)]
@@ -48,20 +52,6 @@ struct CoinbaseL2Event {
     event_type: CoinbaseEventType,
     product_id: String,
     updates: Vec<CoinbaseL2Update>,
-}
-
-impl CoinbaseTicker {
-    fn into_quote(self, received_at: Instant, timestamp: SystemTime) -> Quote {
-        Quote {
-            symbol: self.product_id,
-            bid_price: self.best_bid,
-            bid_quantity: self.best_bid_quantity,
-            ask_price: self.best_ask,
-            ask_quantity: self.best_ask_quantity,
-            received_at,
-            timestamp,
-        }
-    }
 }
 
 pub struct CoinbaseGateway<T: MarketProcessor> {
@@ -144,5 +134,35 @@ impl<T: MarketProcessor> CoinbaseGateway<T> {
         });
 
         Ok(task)
+    }
+}
+
+impl From<CoinbaseL2Event> for BookEvent {
+    fn from(event: CoinbaseL2Event) -> Self {
+        let mut bids = Vec::new();
+        let mut asks = Vec::new();
+
+        for update in event.updates {
+            let level = BookLevelUpdate {
+                price: update.price_level,
+                quantity: update.new_quantity,
+            };
+
+            match update.side {
+                CoinbaseSide::Bid => {bids.push(level)}
+                CoinbaseSide::Offer => {asks.push(level)}
+            };
+        }
+
+        let book_update = BookUpdate{bids, asks};
+
+        match event.event_type {
+            CoinbaseEventType::Snapshot => {
+                BookEvent::Snapshot(book_update)
+            }
+            CoinbaseEventType::Update => {
+                BookEvent::Update(book_update)
+            }
+        }
     }
 }
