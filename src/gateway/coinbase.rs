@@ -1,22 +1,20 @@
+
 use crate::market::{
-    processor::MarketProcessor,
-    quote::Quote
+    book_update::{BookEvent, BookLevelUpdate, BookUpdate}, 
+    processor::BookEventProcessor,
 };
 
-use crate::market::book_update::{
-    self, BookEvent, BookLevelUpdate, BookUpdate,
-};
-
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use rust_decimal::Decimal;
 use serde::Deserialize;
-use std::time::{Instant, SystemTime};
-use tokio::{sync::mpsc, task::JoinHandle};
+use std::time::Instant;
+use tokio::task::JoinHandle;
 use tokio_tungstenite::{
     connect_async,
-    tungstenite::{self, Message},
+    tungstenite::Message,
 };
+
 
 #[derive(Deserialize)]
 #[serde(rename_all="lowercase")]
@@ -54,88 +52,100 @@ struct CoinbaseL2Event {
     updates: Vec<CoinbaseL2Update>,
 }
 
-pub struct CoinbaseGateway<T: MarketProcessor> {
-    quote_processor: T,
+pub struct CoinbaseGateway<T: BookEventProcessor> {
+    book_processor: T,
     coinbase_path: String,
     product_id: String,
 }
 
-impl<T: MarketProcessor> CoinbaseGateway<T> {
+impl<T: BookEventProcessor> CoinbaseGateway<T> {
     pub fn new(
-        quote_processor: T,
+        book_processor: T,
         coinbase_path: String, product_id: String,
     ) -> Self {
         Self {
-            quote_processor,
+            book_processor,
             coinbase_path,
             product_id,
         }
     }
 
-    pub async fn run(self) -> Result<JoinHandle<Result<()>>> {
+    pub async fn run(mut self) -> Result<()> {
         let (mut ws, _) = connect_async(&self.coinbase_path).await?;
 
         let subscription = serde_json::json!({
             "type": "subscribe",
-            "product_ids": [self.product_id],
-            "channel": "level2"
+            "product_ids": [&self.product_id],
+            "channel": "level2",
         });
 
         ws.send(Message::Text(subscription.to_string().into()))
             .await?;
 
-        // Subscribe to heartbeats
-        let heartbeat_subscription = serde_json::json!({
+        let heartbeat = serde_json::json!({
             "type": "subscribe",
-            "channel": "heartbeats"
+            "channel": "heartbeats",
         });
 
-        ws.send(Message::Text(heartbeat_subscription.to_string().into()))
+        ws.send(Message::Text(heartbeat.to_string().into()))
             .await?;
 
-        let task = tokio::spawn(async move {
-            while let Some(result) = ws.next().await {
-                let message = result?;
-
-                match message {
-                    Message::Text(payload) => {
-                        let received_at = Instant::now();
-                        let timestamp = SystemTime::now();
-
-                        let parsed: CoinbaseMessage = match serde_json::from_str(payload.as_str()) {
-                            Ok(coinbase_message) => coinbase_message,
-                            Err(err) => {
-                                eprintln!("Coinbase error: {err}");
-                                continue;
-                            }
-                        };
-
-                        if parsed.message_type == Some("error".to_string()) {
-                            bail!("Coinbase error: {:?}", parsed.message);
-                        }
-
-                        for event in parsed.events {
-                            for ticker in event.tickers {
-                                let quote = ticker.into_quote(received_at, timestamp);
-
-                                self.quote_processor.process_quote(quote)
-                                    .context("failed to process coinbase quote")?;
-                            }
-                        }
-                    }
-                    Message::Close(frame) => {
-                        bail!("Coinbase closed connection: {frame:?}")
-                    }
-                    _ => {}
+        while let Some(result) = ws.next().await {
+            match result? {
+                Message::Text(payload) => {
+                    self.handle_payload(
+                        payload.as_str(),
+                        Instant::now(),
+                    )?;
                 }
+
+                Message::Close(frame) => {
+                    bail!("Coinbase closed connection: {frame:?}");
+                }
+
+                _ => {}
+            }
+        }
+
+        bail!("Coinbase stream ended")
+    }
+
+    fn handle_payload(
+        &mut self,
+        payload: &str,
+        received_at: Instant,
+    ) -> Result<()> {
+        let raw: serde_json::Value =
+            serde_json::from_str(payload)
+                .context("Invalid Coinbase JSON")?;
+
+        if raw.get("type").and_then(|v| v.as_str()) == Some("error") {
+            bail!("Coinbase error: {raw}");
+        }
+
+        if raw.get("channel").and_then(|v| v.as_str()) != Some("l2_data") {
+            return Ok(());
+        }
+
+        let parsed: CoinbaseL2Message =
+            serde_json::from_value(raw)
+                .context("Invalid Coinbase L2 message")?;
+
+        for event in parsed.events {
+            if event.product_id != self.product_id {
+                continue;
             }
 
-            bail!("coinbase stream ended")
-        });
+            self.book_processor.process_book_event(
+                event.into(),
+                received_at,
+            )?;
+        }
 
-        Ok(task)
+        Ok(())
     }
 }
+
 
 impl From<CoinbaseL2Event> for BookEvent {
     fn from(event: CoinbaseL2Event) -> Self {

@@ -8,6 +8,7 @@ use std::time::Instant;
 use crate::market::book_update::BookEvent;
 use crate::market::state::MarketState;
 use crate::market::orderbook::OrderBook;
+use crate::market::processor::BookEventProcessor;
 
 pub struct BookProcessor {
     book: OrderBook,
@@ -77,5 +78,15 @@ impl BookProcessor {
         self.synced = false;
         self.book = OrderBook::new();
         self.publisher.send_replace(None);
+    }
+}
+
+impl BookEventProcessor for BookProcessor {
+    fn process_book_event(
+        &mut self,
+        event: BookEvent,
+        received_at: Instant,
+    ) -> Result<()> {
+        self.process(event, received_at)
     }
 }
