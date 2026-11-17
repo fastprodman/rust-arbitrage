@@ -9,7 +9,6 @@ use futures_util::{SinkExt, StreamExt};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::time::Instant;
-use tokio::task::JoinHandle;
 use tokio_tungstenite::{
     connect_async,
     tungstenite::Message,
@@ -56,17 +55,26 @@ pub struct CoinbaseGateway<T: BookEventProcessor> {
     book_processor: T,
     coinbase_path: String,
     product_id: String,
+    last_sequence_num: Option<u64>,
+}
+
+#[derive(PartialEq)]
+enum MessageProcessingResult {
+    Proceed,
+    Reconcile,
 }
 
 impl<T: BookEventProcessor> CoinbaseGateway<T> {
     pub fn new(
         book_processor: T,
-        coinbase_path: String, product_id: String,
+        coinbase_path: String, 
+        product_id: String,
     ) -> Self {
         Self {
             book_processor,
             coinbase_path,
             product_id,
+            last_sequence_num: None,
         }
     }
 
@@ -93,10 +101,16 @@ impl<T: BookEventProcessor> CoinbaseGateway<T> {
         while let Some(result) = ws.next().await {
             match result? {
                 Message::Text(payload) => {
-                    self.handle_payload(
+                    let result = self.handle_payload(
                         payload.as_str(),
                         Instant::now(),
                     )?;
+
+                    if result == MessageProcessingResult::Proceed {
+                        continue;
+                    }
+
+                    // TODO: Reconcle
                 }
 
                 Message::Close(frame) => {
@@ -114,7 +128,7 @@ impl<T: BookEventProcessor> CoinbaseGateway<T> {
         &mut self,
         payload: &str,
         received_at: Instant,
-    ) -> Result<()> {
+    ) -> Result<MessageProcessingResult> {
         let raw: serde_json::Value =
             serde_json::from_str(payload)
                 .context("Invalid Coinbase JSON")?;
@@ -123,15 +137,26 @@ impl<T: BookEventProcessor> CoinbaseGateway<T> {
             bail!("Coinbase error: {raw}");
         }
 
-        if raw.get("channel").and_then(|v| v.as_str()) != Some("l2_data") {
-            return Ok(());
+        let Some(sequence_num) = raw.get("sequence_num").and_then(|v| v.as_u64()) else {
+            bail!("Sequesnce number missing");
+        };
+
+        if let Some(last_sequence_num) = self.last_sequence_num {
+            if sequence_num > (last_sequence_num + 1) {
+                self.book_processor.invalidate_book();
+
+                return Ok(MessageProcessingResult::Reconcile);
+            }
         }
 
-        let parsed: CoinbaseL2Message =
-            serde_json::from_value(raw)
+        if raw.get("channel").and_then(|v| v.as_str()) != Some("l2_data") {
+            return Ok(MessageProcessingResult::Proceed);
+        }
+
+        let parsed_message = serde_json::from_value::<CoinbaseL2Message>(raw)
                 .context("Invalid Coinbase L2 message")?;
 
-        for event in parsed.events {
+        for event in parsed_message.events {
             if event.product_id != self.product_id {
                 continue;
             }
@@ -142,7 +167,7 @@ impl<T: BookEventProcessor> CoinbaseGateway<T> {
             )?;
         }
 
-        Ok(())
+        Ok(MessageProcessingResult::Proceed)
     }
 }
 

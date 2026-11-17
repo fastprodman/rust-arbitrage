@@ -14,6 +14,7 @@ pub trait BookEventProcessor: Send + 'static {
         event: BookEvent,
         received_at: Instant,
     ) -> Result<()>;
+    fn invalidate_book(&mut self);
 }
 
 pub trait MarketProcessor: Send + Sync + 'static {

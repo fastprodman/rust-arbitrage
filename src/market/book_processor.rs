@@ -69,7 +69,10 @@ impl BookProcessor {
 
         if !state.is_valid() {
             self.invalidate();
+            return Ok(());
         }
+
+        self.publisher.send_replace(Some(Arc::new(state)));
 
         Ok(())
     }
@@ -88,5 +91,9 @@ impl BookEventProcessor for BookProcessor {
         received_at: Instant,
     ) -> Result<()> {
         self.process(event, received_at)
+    }
+    
+    fn invalidate_book(&mut self) {
+        self.invalidate();
     }
 }

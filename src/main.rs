@@ -7,28 +7,34 @@ use rust_decimal::Decimal;
 use crate::gateway::binance::BinanceGateway;
 use crate::gateway::coinbase::CoinbaseGateway;
 use crate::market::exchange::Exchange;
-use crate::market::processor::QuoteProcessor;
+use crate::market::book_processor::BookProcessor;
 use crate::strategy::calculator::ArbitrageService;
 use crate::strategy::runner::{MarketDataSource, StrategyRunner};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let (binance_quote_processor, binance_res)  =  QuoteProcessor::new();
+    let (binance_quote_processor, binance_res)  =  BookProcessor::new(
+        "BTC-USD".to_string(),
+        20,
+    );
     let binance_gateway =
         BinanceGateway::new(
             binance_quote_processor,
             "wss://stream.binance.com:9443/ws/btcusd@bookTicker".to_string(),
         );
 
-    let (coinbase_quote_processor, coinbase_res) =  QuoteProcessor::new();
+    let (coinbase_quote_processor, coinbase_res) =  BookProcessor::new(
+        "BTC-USD".to_string(),
+        20,
+    );
     let coinbase_gateway = CoinbaseGateway::new(
        coinbase_quote_processor,
         "wss://advanced-trade-ws.coinbase.com".to_string(),
         "BTC-USD".to_string(),
     );
 
-    let binance_task = binance_gateway.run().await?;
-    let coinbase_task = coinbase_gateway.run().await?;
+    let binance_task = tokio::spawn(binance_gateway.run());
+    let coinbase_task = tokio::spawn(coinbase_gateway.run());
 
     let mut runner = StrategyRunner::new(
         ArbitrageService::new(
