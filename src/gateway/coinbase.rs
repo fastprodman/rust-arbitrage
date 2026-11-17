@@ -149,6 +149,8 @@ impl<T: BookEventProcessor> CoinbaseGateway<T> {
             }
         }
 
+        self.last_sequence_num = Some(sequence_num);
+
         if raw.get("channel").and_then(|v| v.as_str()) != Some("l2_data") {
             return Ok(MessageProcessingResult::Proceed);
         }
